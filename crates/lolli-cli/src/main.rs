@@ -5,6 +5,7 @@
 
 use clap::{Parser, Subcommand};
 use colored::Colorize;
+use lolli_extract::{extract_term, normalize};
 use lolli_parse::{parse_formula, parse_sequent};
 use lolli_prove::Prover;
 
@@ -199,21 +200,40 @@ fn main() {
             }
         }
 
-        Commands::Extract { sequent, normalize } => {
+        Commands::Extract { sequent, normalize: should_normalize } => {
             match parse_sequent(&sequent) {
                 Ok(s) => {
                     println!("{}", "Sequent:".green().bold());
                     println!("  {}", s.pretty());
                     println!();
-                    println!(
-                        "{}",
-                        format!(
-                            "(Extractor not yet implemented - normalize: {})",
-                            normalize
-                        )
-                        .yellow()
-                    );
-                    println!("  See Issues #12-14 for term extraction implementation");
+
+                    // Convert to one-sided and prove
+                    let one_sided = s.to_one_sided();
+                    let mut prover = Prover::new(100);
+
+                    match prover.prove(&one_sided) {
+                        Some(proof) => {
+                            println!("{}", "✓ Provable".green());
+                            println!();
+
+                            // Extract term from proof
+                            let term = extract_term(&proof);
+
+                            println!("{}", "Extracted term:".cyan().bold());
+                            println!("  {}", term.pretty());
+
+                            if should_normalize {
+                                println!();
+                                let normalized = normalize(&term);
+                                println!("{}", "Normalized:".yellow().bold());
+                                println!("  {}", normalized.pretty());
+                            }
+                        }
+                        None => {
+                            println!("{}", "✗ NOT PROVABLE".red().bold());
+                            println!("  Cannot extract term from unprovable sequent");
+                        }
+                    }
                 }
                 Err(e) => {
                     eprintln!("{} {}", "Error:".red().bold(), e);
