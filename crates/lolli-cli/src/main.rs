@@ -4,6 +4,8 @@
 //! extracting computational content, and compiling to Rust.
 
 use clap::{Parser, Subcommand};
+use colored::Colorize;
+use lolli_parse::{parse_formula, parse_sequent};
 
 #[derive(Parser)]
 #[command(name = "lolli")]
@@ -21,6 +23,14 @@ enum Commands {
     Parse {
         /// Formula to parse
         formula: String,
+
+        /// Output in ASCII instead of Unicode
+        #[arg(short, long)]
+        ascii: bool,
+
+        /// Output in LaTeX format
+        #[arg(short, long)]
+        latex: bool,
     },
 
     /// Check if a sequent is provable
@@ -79,9 +89,60 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Parse { formula } => {
-            println!("Parsing: {}", formula);
-            println!("(Parser not yet implemented - see Issue #6)");
+        Commands::Parse {
+            formula,
+            ascii,
+            latex,
+        } => {
+            match parse_formula(&formula) {
+                Ok(f) => {
+                    println!("{}", "Parsed:".green().bold());
+                    if latex {
+                        println!("  {}", f.pretty_latex());
+                    } else if ascii {
+                        println!("  {}", f.pretty_ascii());
+                    } else {
+                        println!("  {}", f.pretty());
+                    }
+
+                    println!();
+                    println!("{}", "Desugared:".cyan().bold());
+                    let desugared = f.desugar();
+                    if latex {
+                        println!("  {}", desugared.pretty_latex());
+                    } else if ascii {
+                        println!("  {}", desugared.pretty_ascii());
+                    } else {
+                        println!("  {}", desugared.pretty());
+                    }
+
+                    println!();
+                    println!("{}", "Negation:".yellow().bold());
+                    let negated = f.negate();
+                    if latex {
+                        println!("  {}", negated.pretty_latex());
+                    } else if ascii {
+                        println!("  {}", negated.pretty_ascii());
+                    } else {
+                        println!("  {}", negated.pretty());
+                    }
+
+                    println!();
+                    println!(
+                        "{} {}",
+                        "Polarity:".magenta().bold(),
+                        if f.is_positive() {
+                            "positive (+)".green()
+                        } else {
+                            "negative (-)".red()
+                        }
+                    );
+                }
+                Err(e) => {
+                    eprintln!("{} {}", "Error:".red().bold(), e);
+                    std::process::exit(1);
+                }
+            }
         }
 
         Commands::Prove {
@@ -89,24 +150,109 @@ fn main() {
             depth,
             format,
         } => {
-            println!("Proving: {} (depth: {}, format: {})", sequent, depth, format);
-            println!("(Prover not yet implemented - see Issues #8-11)");
+            match parse_sequent(&sequent) {
+                Ok(s) => {
+                    println!("{}", "Sequent:".green().bold());
+                    println!("  {}", s.pretty());
+                    println!();
+                    println!(
+                        "{}",
+                        format!(
+                            "(Prover not yet implemented - depth: {}, format: {})",
+                            depth, format
+                        )
+                        .yellow()
+                    );
+                    println!("  See Issues #8-11 for proof search implementation");
+                }
+                Err(e) => {
+                    eprintln!("{} {}", "Error:".red().bold(), e);
+                    std::process::exit(1);
+                }
+            }
         }
 
         Commands::Extract { sequent, normalize } => {
-            println!(
-                "Extracting from: {} (normalize: {})",
-                sequent, normalize
-            );
-            println!("(Extractor not yet implemented - see Issues #12-14)");
+            match parse_sequent(&sequent) {
+                Ok(s) => {
+                    println!("{}", "Sequent:".green().bold());
+                    println!("  {}", s.pretty());
+                    println!();
+                    println!(
+                        "{}",
+                        format!(
+                            "(Extractor not yet implemented - normalize: {})",
+                            normalize
+                        )
+                        .yellow()
+                    );
+                    println!("  See Issues #12-14 for term extraction implementation");
+                }
+                Err(e) => {
+                    eprintln!("{} {}", "Error:".red().bold(), e);
+                    std::process::exit(1);
+                }
+            }
         }
 
         Commands::Codegen { sequent, output } => {
-            println!(
-                "Generating code for: {} (output: {:?})",
-                sequent, output
-            );
-            println!("(Codegen not yet implemented - see Issues #15-17)");
+            match parse_sequent(&sequent) {
+                Ok(s) => {
+                    println!("{}", "Sequent:".green().bold());
+                    println!("  {}", s.pretty());
+                    println!();
+
+                    // Show the type that would be generated
+                    use lolli_codegen::RustCodegen;
+                    let codegen = RustCodegen::new();
+
+                    println!("{}", "Type signature:".cyan().bold());
+                    if !s.antecedent.is_empty() {
+                        let args: Vec<String> = s
+                            .antecedent
+                            .iter()
+                            .map(|f| codegen.formula_to_type(f))
+                            .collect();
+                        print!("  fn f(");
+                        for (i, arg) in args.iter().enumerate() {
+                            if i > 0 {
+                                print!(", ");
+                            }
+                            print!("arg{}: {}", i, arg);
+                        }
+                        print!(")");
+                    } else {
+                        print!("  fn f()");
+                    }
+
+                    if !s.succedent.is_empty() {
+                        let ret: Vec<String> = s
+                            .succedent
+                            .iter()
+                            .map(|f| codegen.formula_to_type(f))
+                            .collect();
+                        if ret.len() == 1 {
+                            println!(" -> {}", ret[0]);
+                        } else {
+                            println!(" -> ({})", ret.join(", "));
+                        }
+                    } else {
+                        println!();
+                    }
+
+                    println!();
+                    println!(
+                        "{}",
+                        format!("(Full codegen not yet implemented - output: {:?})", output)
+                            .yellow()
+                    );
+                    println!("  See Issues #15-17 for code generation implementation");
+                }
+                Err(e) => {
+                    eprintln!("{} {}", "Error:".red().bold(), e);
+                    std::process::exit(1);
+                }
+            }
         }
 
         Commands::Viz {
@@ -114,24 +260,43 @@ fn main() {
             format,
             output,
         } => {
-            println!(
-                "Visualizing: {} (format: {}, output: {:?})",
-                sequent, format, output
-            );
-            println!("(Visualization not yet implemented - see Issues #18-20)");
+            match parse_sequent(&sequent) {
+                Ok(s) => {
+                    println!("{}", "Sequent:".green().bold());
+                    println!("  {}", s.pretty());
+                    println!();
+                    println!(
+                        "{}",
+                        format!(
+                            "(Visualization not yet implemented - format: {}, output: {:?})",
+                            format, output
+                        )
+                        .yellow()
+                    );
+                    println!("  See Issues #18-20 for visualization implementation");
+                }
+                Err(e) => {
+                    eprintln!("{} {}", "Error:".red().bold(), e);
+                    std::process::exit(1);
+                }
+            }
         }
 
         Commands::Repl => {
-            println!("Lolli Linear Logic Workbench REPL");
-            println!("(REPL not yet implemented - see Issue #22)");
+            println!("{}", "Lolli Linear Logic Workbench REPL".green().bold());
+            println!("{}", "(Full REPL not yet implemented - see Issue #22)".yellow());
             println!();
             println!("Commands:");
-            println!("  :prove <sequent>  - Prove a sequent");
-            println!("  :parse <formula>  - Parse and display a formula");
+            println!("  :prove <sequent>   - Prove a sequent");
+            println!("  :parse <formula>   - Parse and display a formula");
             println!("  :extract <sequent> - Extract term from proof");
             println!("  :codegen <sequent> - Generate Rust code");
-            println!("  :help             - Show help");
-            println!("  :quit             - Exit REPL");
+            println!("  :help              - Show help");
+            println!("  :quit              - Exit REPL");
+            println!();
+            println!("For now, use the subcommands directly:");
+            println!("  {} parse \"A -o B\"", "lolli".cyan());
+            println!("  {} prove \"A, B |- A * B\"", "lolli".cyan());
         }
     }
 }

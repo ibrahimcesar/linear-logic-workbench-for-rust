@@ -176,6 +176,80 @@ impl Formula {
             Formula::Zero => "0".to_string(),
         }
     }
+
+    /// Pretty print the formula for LaTeX.
+    pub fn pretty_latex(&self) -> String {
+        match self {
+            Formula::Atom(a) => a.clone(),
+            Formula::NegAtom(a) => format!("{}^{{\\bot}}", a),
+            Formula::Tensor(a, b) => {
+                format!("({} \\otimes {})", a.pretty_latex(), b.pretty_latex())
+            }
+            Formula::Par(a, b) => {
+                format!("({} \\parr {})", a.pretty_latex(), b.pretty_latex())
+            }
+            Formula::Lolli(a, b) => {
+                format!("({} \\multimap {})", a.pretty_latex(), b.pretty_latex())
+            }
+            Formula::With(a, b) => {
+                format!("({} \\with {})", a.pretty_latex(), b.pretty_latex())
+            }
+            Formula::Plus(a, b) => {
+                format!("({} \\oplus {})", a.pretty_latex(), b.pretty_latex())
+            }
+            Formula::OfCourse(a) => format!("{{!}}{}", a.pretty_latex()),
+            Formula::WhyNot(a) => format!("{{?}}{}", a.pretty_latex()),
+            Formula::One => "\\mathbf{1}".to_string(),
+            Formula::Bottom => "\\bot".to_string(),
+            Formula::Top => "\\top".to_string(),
+            Formula::Zero => "\\mathbf{0}".to_string(),
+        }
+    }
+
+    /// Create an atom formula.
+    pub fn atom(name: impl Into<String>) -> Self {
+        Formula::Atom(name.into())
+    }
+
+    /// Create a negated atom formula.
+    pub fn neg_atom(name: impl Into<String>) -> Self {
+        Formula::NegAtom(name.into())
+    }
+
+    /// Create a tensor (A ⊗ B).
+    pub fn tensor(a: Formula, b: Formula) -> Self {
+        Formula::Tensor(Box::new(a), Box::new(b))
+    }
+
+    /// Create a par (A ⅋ B).
+    pub fn par(a: Formula, b: Formula) -> Self {
+        Formula::Par(Box::new(a), Box::new(b))
+    }
+
+    /// Create a linear implication (A ⊸ B).
+    pub fn lolli(a: Formula, b: Formula) -> Self {
+        Formula::Lolli(Box::new(a), Box::new(b))
+    }
+
+    /// Create a with (A & B).
+    pub fn with(a: Formula, b: Formula) -> Self {
+        Formula::With(Box::new(a), Box::new(b))
+    }
+
+    /// Create a plus (A ⊕ B).
+    pub fn plus(a: Formula, b: Formula) -> Self {
+        Formula::Plus(Box::new(a), Box::new(b))
+    }
+
+    /// Create an of-course (!A).
+    pub fn of_course(a: Formula) -> Self {
+        Formula::OfCourse(Box::new(a))
+    }
+
+    /// Create a why-not (?A).
+    pub fn why_not(a: Formula) -> Self {
+        Formula::WhyNot(Box::new(a))
+    }
 }
 
 #[cfg(test)]
@@ -184,43 +258,154 @@ mod tests {
 
     #[test]
     fn test_negation_involutive() {
-        let a = Formula::Atom("A".to_string());
+        let a = Formula::atom("A");
         assert_eq!(a.negate().negate(), a);
 
-        let complex = Formula::Tensor(
-            Box::new(Formula::Atom("A".to_string())),
-            Box::new(Formula::Atom("B".to_string())),
-        );
+        let complex = Formula::tensor(Formula::atom("A"), Formula::atom("B"));
         assert_eq!(complex.negate().negate(), complex);
+
+        // Test primitive connectives (not lolli, which is sugar)
+        let formulas = vec![
+            Formula::One,
+            Formula::Bottom,
+            Formula::Top,
+            Formula::Zero,
+            Formula::of_course(Formula::atom("X")),
+            Formula::why_not(Formula::atom("Y")),
+            Formula::with(Formula::atom("A"), Formula::atom("B")),
+            Formula::plus(Formula::atom("A"), Formula::atom("B")),
+            Formula::par(Formula::atom("A"), Formula::atom("B")),
+        ];
+
+        for f in formulas {
+            assert_eq!(f.negate().negate(), f, "Failed for: {:?}", f);
+        }
+
+        // Lolli is special: (A ⊸ B)⊥ = A ⊗ B⊥, which is not a Lolli
+        // But we can verify the semantics are correct
+        let lolli = Formula::lolli(Formula::atom("A"), Formula::atom("B"));
+        let neg_lolli = lolli.negate();
+        // (A ⊸ B)⊥ = A ⊗ B⊥
+        assert_eq!(
+            neg_lolli,
+            Formula::tensor(Formula::atom("A"), Formula::neg_atom("B"))
+        );
     }
 
     #[test]
     fn test_de_morgan() {
-        let a = Formula::Atom("A".to_string());
-        let b = Formula::Atom("B".to_string());
-
         // (A ⊗ B)⊥ = A⊥ ⅋ B⊥
-        let tensor = Formula::Tensor(Box::new(a.clone()), Box::new(b.clone()));
-        let expected = Formula::Par(
-            Box::new(Formula::NegAtom("A".to_string())),
-            Box::new(Formula::NegAtom("B".to_string())),
-        );
+        let tensor = Formula::tensor(Formula::atom("A"), Formula::atom("B"));
+        let expected = Formula::par(Formula::neg_atom("A"), Formula::neg_atom("B"));
         assert_eq!(tensor.negate(), expected);
+
+        // (A ⅋ B)⊥ = A⊥ ⊗ B⊥
+        let par = Formula::par(Formula::atom("A"), Formula::atom("B"));
+        let expected = Formula::tensor(Formula::neg_atom("A"), Formula::neg_atom("B"));
+        assert_eq!(par.negate(), expected);
+
+        // (A & B)⊥ = A⊥ ⊕ B⊥
+        let with = Formula::with(Formula::atom("A"), Formula::atom("B"));
+        let expected = Formula::plus(Formula::neg_atom("A"), Formula::neg_atom("B"));
+        assert_eq!(with.negate(), expected);
+
+        // (A ⊕ B)⊥ = A⊥ & B⊥
+        let plus = Formula::plus(Formula::atom("A"), Formula::atom("B"));
+        let expected = Formula::with(Formula::neg_atom("A"), Formula::neg_atom("B"));
+        assert_eq!(plus.negate(), expected);
+
+        // 1⊥ = ⊥
+        assert_eq!(Formula::One.negate(), Formula::Bottom);
+
+        // ⊥⊥ = 1
+        assert_eq!(Formula::Bottom.negate(), Formula::One);
+
+        // ⊤⊥ = 0
+        assert_eq!(Formula::Top.negate(), Formula::Zero);
+
+        // 0⊥ = ⊤
+        assert_eq!(Formula::Zero.negate(), Formula::Top);
+
+        // (!A)⊥ = ?(A⊥)
+        let bang = Formula::of_course(Formula::atom("A"));
+        let expected = Formula::why_not(Formula::neg_atom("A"));
+        assert_eq!(bang.negate(), expected);
+
+        // (?A)⊥ = !(A⊥)
+        let whynot = Formula::why_not(Formula::atom("A"));
+        let expected = Formula::of_course(Formula::neg_atom("A"));
+        assert_eq!(whynot.negate(), expected);
     }
 
     #[test]
     fn test_polarity() {
-        assert!(Formula::Atom("A".to_string()).is_positive());
-        assert!(Formula::NegAtom("A".to_string()).is_negative());
-        assert!(Formula::Tensor(
-            Box::new(Formula::Atom("A".to_string())),
-            Box::new(Formula::Atom("B".to_string()))
-        )
-        .is_positive());
-        assert!(Formula::Par(
-            Box::new(Formula::Atom("A".to_string())),
-            Box::new(Formula::Atom("B".to_string()))
-        )
-        .is_negative());
+        // Positive formulas
+        assert!(Formula::atom("A").is_positive());
+        assert!(Formula::tensor(Formula::atom("A"), Formula::atom("B")).is_positive());
+        assert!(Formula::One.is_positive());
+        assert!(Formula::plus(Formula::atom("A"), Formula::atom("B")).is_positive());
+        assert!(Formula::Zero.is_positive());
+        assert!(Formula::of_course(Formula::atom("A")).is_positive());
+
+        // Negative formulas
+        assert!(Formula::neg_atom("A").is_negative());
+        assert!(Formula::par(Formula::atom("A"), Formula::atom("B")).is_negative());
+        assert!(Formula::Bottom.is_negative());
+        assert!(Formula::with(Formula::atom("A"), Formula::atom("B")).is_negative());
+        assert!(Formula::Top.is_negative());
+        assert!(Formula::why_not(Formula::atom("A")).is_negative());
+
+        // Lolli is negative (it's sugar for A⊥ ⅋ B)
+        assert!(Formula::lolli(Formula::atom("A"), Formula::atom("B")).is_negative());
+    }
+
+    #[test]
+    fn test_desugar() {
+        // A ⊸ B should desugar to A⊥ ⅋ B
+        let lolli = Formula::lolli(Formula::atom("A"), Formula::atom("B"));
+        let desugared = lolli.desugar();
+        let expected = Formula::par(Formula::neg_atom("A"), Formula::atom("B"));
+        assert_eq!(desugared, expected);
+
+        // Nested: (A ⊸ B) ⊸ C should desugar correctly
+        let nested = Formula::lolli(
+            Formula::lolli(Formula::atom("A"), Formula::atom("B")),
+            Formula::atom("C"),
+        );
+        let desugared = nested.desugar();
+        // (A ⊸ B)⊥ ⅋ C = (A ⊗ B⊥) ⅋ C
+        let expected = Formula::par(
+            Formula::tensor(Formula::atom("A"), Formula::neg_atom("B")),
+            Formula::atom("C"),
+        );
+        assert_eq!(desugared, expected);
+    }
+
+    #[test]
+    fn test_pretty_print() {
+        let f = Formula::lolli(Formula::atom("A"), Formula::atom("B"));
+        assert_eq!(f.pretty(), "(A ⊸ B)");
+        assert_eq!(f.pretty_ascii(), "(A -o B)");
+        assert_eq!(f.pretty_latex(), "(A \\multimap B)");
+
+        let f = Formula::tensor(
+            Formula::of_course(Formula::atom("A")),
+            Formula::why_not(Formula::atom("B")),
+        );
+        assert_eq!(f.pretty(), "(!A ⊗ ?B)");
+        assert_eq!(f.pretty_ascii(), "(!A * ?B)");
+    }
+
+    #[test]
+    fn test_units() {
+        assert_eq!(Formula::One.pretty(), "1");
+        assert_eq!(Formula::Bottom.pretty(), "⊥");
+        assert_eq!(Formula::Top.pretty(), "⊤");
+        assert_eq!(Formula::Zero.pretty(), "0");
+
+        assert_eq!(Formula::One.pretty_ascii(), "1");
+        assert_eq!(Formula::Bottom.pretty_ascii(), "bot");
+        assert_eq!(Formula::Top.pretty_ascii(), "top");
+        assert_eq!(Formula::Zero.pretty_ascii(), "0");
     }
 }

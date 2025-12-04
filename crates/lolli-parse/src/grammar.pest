@@ -1,0 +1,90 @@
+// Linear Logic Grammar for Lolli
+// Pest PEG grammar for parsing linear logic formulas and sequents
+
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
+COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
+
+// Identifiers: start with letter, then alphanumeric or underscore
+ident = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+
+// Main entry point for formulas
+formula = { lolli_expr }
+
+// Operators from lowest to highest precedence:
+// 1. Linear implication -o (right associative)
+// 2. Par | (left associative)
+// 3. Tensor * (left associative)
+// 4. Plus + (left associative)
+// 5. With & (left associative)
+// 6. Unary ! ? and negation ^
+// 7. Atoms and parenthesized expressions
+
+// Linear implication: A -o B -o C = A -o (B -o C) (right associative)
+lolli_expr = { par_expr ~ (lolli_op ~ lolli_expr)? }
+lolli_op = { "-o" | "⊸" | "->" }
+
+// Par: A | B (left associative)
+par_expr = { tensor_expr ~ (par_op ~ tensor_expr)* }
+par_op = { "⅋" | "`|`" | "par" }
+
+// Tensor: A * B (left associative)
+tensor_expr = { plus_expr ~ (tensor_op ~ plus_expr)* }
+tensor_op = { "⊗" | "*" | "×" }
+
+// Plus: A + B (left associative)
+plus_expr = { with_expr ~ (plus_op ~ with_expr)* }
+plus_op = { "⊕" | "+" }
+
+// With: A & B (left associative)
+with_expr = { unary_expr ~ (with_op ~ unary_expr)* }
+with_op = { "&" | "with" }
+
+// Unary operators: ! ? and postfix negation ^
+unary_expr = {
+    bang_op ~ unary_expr |
+    whynot_op ~ unary_expr |
+    primary_expr ~ negation_suffix?
+}
+bang_op = { "!" }
+whynot_op = { "?" }
+negation_suffix = { "^" | "⊥" }
+
+// Primary expressions: atoms, units, parenthesized
+primary_expr = {
+    "(" ~ formula ~ ")" |
+    one |
+    bottom |
+    top |
+    zero |
+    ident
+}
+
+// Unit constants
+one = { "1" | "one" }
+bottom = { "⊥" | "bot" | "bottom" }
+top = { "⊤" | "top" }
+zero = { "0" | "zero" }
+
+// Sequents
+sequent = {
+    formula_list ~ turnstile ~ formula_list |
+    formula_list ~ turnstile |
+    turnstile ~ formula_list
+}
+
+turnstile = { "⊢" | "|-" | "=>" | "⊣⊢" }
+
+formula_list = { formula ~ ("," ~ formula)* }
+
+// File with declarations
+file = { SOI ~ (declaration | sequent_decl)* ~ EOI }
+
+declaration = {
+    atom_decl |
+    def_decl
+}
+
+atom_decl = { "atom" ~ ident }
+def_decl = { "def" ~ ident ~ "=" ~ formula }
+
+sequent_decl = { "prove" ~ sequent }
