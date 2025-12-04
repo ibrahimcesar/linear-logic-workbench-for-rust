@@ -6,6 +6,7 @@
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use lolli_parse::{parse_formula, parse_sequent};
+use lolli_prove::Prover;
 
 #[derive(Parser)]
 #[command(name = "lolli")]
@@ -155,15 +156,41 @@ fn main() {
                     println!("{}", "Sequent:".green().bold());
                     println!("  {}", s.pretty());
                     println!();
-                    println!(
-                        "{}",
-                        format!(
-                            "(Prover not yet implemented - depth: {}, format: {})",
-                            depth, format
-                        )
-                        .yellow()
-                    );
-                    println!("  See Issues #8-11 for proof search implementation");
+
+                    // Convert two-sided sequent to one-sided for the prover
+                    let one_sided = s.to_one_sided();
+                    println!("{}", "One-sided form:".cyan().bold());
+                    println!("  ⊢ {}", one_sided.linear.iter().map(|f| f.pretty()).collect::<Vec<_>>().join(", "));
+                    println!();
+
+                    let mut prover = Prover::new(depth);
+
+                    match prover.prove(&one_sided) {
+                        Some(proof) => {
+                            println!("{}", "✓ PROVABLE".green().bold());
+                            println!();
+                            println!("{}", "Proof:".cyan().bold());
+                            match format.as_str() {
+                                "latex" => {
+                                    println!("{}", proof_to_latex(&proof, 0));
+                                }
+                                "dot" => {
+                                    println!("{}", proof_to_dot(&proof));
+                                }
+                                _ => {
+                                    // Default tree format
+                                    print_proof_tree(&proof, 0);
+                                }
+                            }
+                            println!();
+                            println!("{} {}", "Depth:".yellow(), proof.depth());
+                            println!("{} {}", "Cut count:".yellow(), proof.cut_count());
+                        }
+                        None => {
+                            println!("{}", "✗ NOT PROVABLE".red().bold());
+                            println!("  (within depth limit of {})", depth);
+                        }
+                    }
                 }
                 Err(e) => {
                     eprintln!("{} {}", "Error:".red().bold(), e);
@@ -299,4 +326,91 @@ fn main() {
             println!("  {} prove \"A, B |- A * B\"", "lolli".cyan());
         }
     }
+}
+
+use lolli_core::Proof;
+
+/// Print a proof tree in ASCII format
+fn print_proof_tree(proof: &Proof, indent: usize) {
+    let prefix = "  ".repeat(indent);
+
+    // Print premises first (above the line)
+    for premise in &proof.premises {
+        print_proof_tree(premise, indent + 1);
+    }
+
+    // Print the inference line
+    let conclusion_formulas = proof.conclusion.linear.iter()
+        .map(|f| f.pretty())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let rule_name = format!("{:?}", proof.rule);
+
+    if !proof.premises.is_empty() {
+        let line_len = conclusion_formulas.len().max(20);
+        println!("{}{}  {}", prefix, "─".repeat(line_len), rule_name.cyan());
+    }
+
+    println!("{}⊢ {}", prefix, conclusion_formulas);
+}
+
+/// Convert a proof to LaTeX format
+fn proof_to_latex(proof: &Proof, _depth: usize) -> String {
+    let mut lines = vec![];
+    lines.push("\\begin{prooftree}".to_string());
+    proof_to_latex_inner(proof, &mut lines);
+    lines.push("\\end{prooftree}".to_string());
+    lines.join("\n")
+}
+
+fn proof_to_latex_inner(proof: &Proof, lines: &mut Vec<String>) {
+    // Premises first
+    for premise in &proof.premises {
+        proof_to_latex_inner(premise, lines);
+    }
+
+    let conclusion = proof.conclusion.linear.iter()
+        .map(|f| f.pretty_latex())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let rule_name = format!("{:?}", proof.rule);
+
+    match proof.premises.len() {
+        0 => lines.push(format!("  \\AxiomC{{$\\vdash {}$}}", conclusion)),
+        1 => lines.push(format!("  \\UnaryInfC{{$\\vdash {}$}} % {}", conclusion, rule_name)),
+        2 => lines.push(format!("  \\BinaryInfC{{$\\vdash {}$}} % {}", conclusion, rule_name)),
+        _ => lines.push(format!("  \\TrinaryInfC{{$\\vdash {}$}} % {}", conclusion, rule_name)),
+    }
+}
+
+/// Convert a proof to DOT (Graphviz) format
+fn proof_to_dot(proof: &Proof) -> String {
+    let mut lines = vec![];
+    lines.push("digraph proof {".to_string());
+    lines.push("  rankdir=BT;".to_string());
+    lines.push("  node [shape=box];".to_string());
+
+    let mut counter = 0;
+    proof_to_dot_inner(proof, &mut lines, &mut counter);
+
+    lines.push("}".to_string());
+    lines.join("\n")
+}
+
+fn proof_to_dot_inner(proof: &Proof, lines: &mut Vec<String>, counter: &mut usize) -> usize {
+    let my_id = *counter;
+    *counter += 1;
+
+    let conclusion = proof.conclusion.pretty().replace('"', "\\\"");
+    let rule_name = format!("{:?}", proof.rule);
+
+    lines.push(format!("  n{} [label=\"⊢ {}\\n({})\"];", my_id, conclusion, rule_name));
+
+    for premise in &proof.premises {
+        let child_id = proof_to_dot_inner(premise, lines, counter);
+        lines.push(format!("  n{} -> n{};", child_id, my_id));
+    }
+
+    my_id
 }
