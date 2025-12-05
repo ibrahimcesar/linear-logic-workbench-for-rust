@@ -13,7 +13,7 @@ use lolli_prove::Prover;
 #[command(name = "lolli")]
 #[command(author = "Ibrahim Cesar")]
 #[command(version)]
-#[command(about = "Linear Logic Workbench - Parse, prove, extract, and compile linear logic", long_about = None)]
+#[command(about = "Lolli - a linear logic workbench: Parse, prove, extract, and compile linear logic", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
