@@ -315,15 +315,51 @@ fn main() {
                     println!("{}", "Sequent:".green().bold());
                     println!("  {}", s.pretty());
                     println!();
-                    println!(
-                        "{}",
-                        format!(
-                            "(Visualization not yet implemented - format: {}, output: {:?})",
-                            format, output
-                        )
-                        .yellow()
-                    );
-                    println!("  See Issues #18-20 for visualization implementation");
+
+                    // Convert to one-sided and prove
+                    let one_sided = s.to_one_sided();
+                    let mut prover = Prover::new(100);
+
+                    match prover.prove(&one_sided) {
+                        Some(proof) => {
+                            println!("{}", "✓ Provable".green());
+                            println!();
+
+                            // Generate visualization
+                            use lolli_viz::{render_ascii, render_latex, render_dot};
+
+                            let viz = match format.as_str() {
+                                "latex" => render_latex(&proof),
+                                "dot" => render_dot(&proof),
+                                "svg" => {
+                                    println!("{}", "SVG output not yet implemented".yellow());
+                                    render_dot(&proof) // Fall back to DOT
+                                }
+                                _ => render_ascii(&proof),
+                            };
+
+                            println!("{}", "Visualization:".cyan().bold());
+                            println!();
+                            println!("{}", viz);
+
+                            // Write to file if output specified
+                            if let Some(path) = output {
+                                match std::fs::write(&path, &viz) {
+                                    Ok(_) => {
+                                        println!();
+                                        println!("{} {}", "Written to:".green(), path);
+                                    }
+                                    Err(e) => {
+                                        eprintln!("{} Failed to write file: {}", "Error:".red().bold(), e);
+                                    }
+                                }
+                            }
+                        }
+                        None => {
+                            println!("{}", "✗ NOT PROVABLE".red().bold());
+                            println!("  Cannot visualize unprovable sequent");
+                        }
+                    }
                 }
                 Err(e) => {
                     eprintln!("{} {}", "Error:".red().bold(), e);
@@ -333,20 +369,7 @@ fn main() {
         }
 
         Commands::Repl => {
-            println!("{}", "Lolli Linear Logic Workbench REPL".green().bold());
-            println!("{}", "(Full REPL not yet implemented - see Issue #22)".yellow());
-            println!();
-            println!("Commands:");
-            println!("  :prove <sequent>   - Prove a sequent");
-            println!("  :parse <formula>   - Parse and display a formula");
-            println!("  :extract <sequent> - Extract term from proof");
-            println!("  :codegen <sequent> - Generate Rust code");
-            println!("  :help              - Show help");
-            println!("  :quit              - Exit REPL");
-            println!();
-            println!("For now, use the subcommands directly:");
-            println!("  {} parse \"A -o B\"", "lolli".cyan());
-            println!("  {} prove \"A, B |- A * B\"", "lolli".cyan());
+            run_repl();
         }
     }
 }
@@ -436,4 +459,158 @@ fn proof_to_dot_inner(proof: &Proof, lines: &mut Vec<String>, counter: &mut usiz
     }
 
     my_id
+}
+
+/// Run the interactive REPL.
+fn run_repl() {
+    use std::io::{self, Write};
+
+    println!("{}", "╔════════════════════════════════════════════╗".cyan());
+    println!("{}", "║  Lolli - Linear Logic Workbench REPL       ║".cyan());
+    println!("{}", "╚════════════════════════════════════════════╝".cyan());
+    println!();
+    println!("Commands:");
+    println!("  {}       - Parse and analyze a formula", "formula".green());
+    println!("  {}    - Prove a sequent (e.g., A, B |- A * B)", "seq |-".green());
+    println!("  {}           - Show this help", ":help".yellow());
+    println!("  {}           - Exit the REPL", ":quit".yellow());
+    println!();
+
+    let stdin = io::stdin();
+    let mut stdout = io::stdout();
+
+    loop {
+        print!("{} ", "lolli>".cyan().bold());
+        stdout.flush().unwrap();
+
+        let mut input = String::new();
+        match stdin.read_line(&mut input) {
+            Ok(0) => break, // EOF
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("{} {}", "Error reading input:".red(), e);
+                continue;
+            }
+        }
+
+        let input = input.trim();
+        if input.is_empty() {
+            continue;
+        }
+
+        // Handle commands
+        if input.starts_with(':') {
+            match input {
+                ":quit" | ":q" | ":exit" => {
+                    println!("{}", "Goodbye!".green());
+                    break;
+                }
+                ":help" | ":h" | ":?" => {
+                    print_repl_help();
+                }
+                _ => {
+                    println!("{} Unknown command: {}", "Error:".red(), input);
+                    println!("Type {} for help", ":help".yellow());
+                }
+            }
+            continue;
+        }
+
+        // Check if it's a sequent (contains |- or ⊢)
+        if input.contains("|-") || input.contains("⊢") {
+            handle_sequent(input);
+        } else {
+            handle_formula(input);
+        }
+    }
+}
+
+fn print_repl_help() {
+    println!();
+    println!("{}", "Lolli REPL Help".cyan().bold());
+    println!();
+    println!("{}", "Formulas:".yellow());
+    println!("  A, B, C...        Atoms (propositions)");
+    println!("  A -o B or A ⊸ B   Linear implication");
+    println!("  A * B or A ⊗ B    Tensor (both)");
+    println!("  A + B or A ⊕ B    Plus (choice)");
+    println!("  A & B             With (both available)");
+    println!("  !A                Of course (replicable)");
+    println!("  ?A                Why not");
+    println!("  1                 Multiplicative unit");
+    println!("  0                 Additive zero");
+    println!("  top               Additive top");
+    println!("  bot               Multiplicative bottom");
+    println!();
+    println!("{}", "Sequents:".yellow());
+    println!("  A, B |- C         Two-sided sequent");
+    println!("  |- A, B           One-sided sequent");
+    println!();
+    println!("{}", "Examples:".yellow());
+    println!("  A -o B            Parse a formula");
+    println!("  A, B |- A * B     Prove tensor introduction");
+    println!("  A |- A + B        Prove plus introduction");
+    println!();
+}
+
+fn handle_formula(input: &str) {
+    match parse_formula(input) {
+        Ok(f) => {
+            println!();
+            println!("{} {}", "Parsed:".green(), f.pretty());
+            println!("{} {}", "Desugared:".cyan(), f.desugar().pretty());
+            println!(
+                "{} {}",
+                "Polarity:".magenta(),
+                if f.is_positive() { "positive (+)" } else { "negative (-)" }
+            );
+            println!();
+        }
+        Err(e) => {
+            println!("{} {}", "Parse error:".red(), e);
+        }
+    }
+}
+
+fn handle_sequent(input: &str) {
+    match parse_sequent(input) {
+        Ok(s) => {
+            println!();
+            println!("{} {}", "Sequent:".green(), s.pretty());
+
+            let one_sided = s.to_one_sided();
+            let mut prover = Prover::new(100);
+
+            match prover.prove(&one_sided) {
+                Some(proof) => {
+                    println!("{}", "✓ PROVABLE".green().bold());
+                    println!();
+
+                    // Show proof tree
+                    println!("{}", "Proof:".cyan());
+                    print_proof_tree(&proof, 0);
+                    println!();
+
+                    // Show extracted term
+                    let term = extract_term(&proof);
+                    println!("{} {}", "Extracted term:".yellow(), term.pretty());
+
+                    // Show normalized term
+                    let normalized = normalize(&term);
+                    if normalized != term {
+                        println!("{} {}", "Normalized:".yellow(), normalized.pretty());
+                    }
+                    println!();
+                }
+                None => {
+                    println!("{}", "✗ NOT PROVABLE".red().bold());
+                    println!("  (in linear logic without contraction/weakening)");
+                    println!();
+                }
+            }
+        }
+        Err(e) => {
+            println!("{} {}", "Parse error:".red(), e);
+        }
+    }
 }
