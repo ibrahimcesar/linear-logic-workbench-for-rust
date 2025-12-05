@@ -182,6 +182,37 @@ lolli/
 | MALL | MLL + &, ⊕, ⊤, 0 | ✓ Complete |
 | MELL | MLL + !, ? | ✓ Complete |
 
+## Status & Roadmap
+
+### Current Status (v0.2.0)
+
+Lolli is functional and suitable for:
+- **Educational use** — Learning linear logic and the Curry-Howard correspondence
+- **Prototyping** — Modeling resource protocols before implementation
+- **Small specifications** — Verifying sequents with ~10-20 connectives
+- **Code scaffolding** — Generating type-safe Rust API skeletons
+
+### Known Limitations
+
+| Area | Limitation | Impact |
+|------|------------|--------|
+| **Performance** | Proof search is exponential | Large formulas may timeout |
+| **Scalability** | Single-threaded, in-memory | Not suitable for batch processing |
+| **Error handling** | Parser fails on first error | No error recovery or suggestions |
+| **Code generation** | Produces skeletons only | Manual implementation still needed |
+| **Verification** | Prover not formally verified | Suitable for prototyping, not certification |
+
+### Path to 1.0.0
+
+| Version | Focus | Key Deliverables |
+|---------|-------|------------------|
+| **v0.3.0** | Robustness | Better errors, input validation, edge cases |
+| **v0.4.0** | Performance | Proof caching, pruning, benchmarks |
+| **v0.5.0** | Usability | LSP support, better REPL, documentation |
+| **v1.0.0** | Production | Stability guarantees, full test coverage |
+
+See [GitHub Milestones](https://github.com/ibrahimcesar/lolli/milestones) for detailed tracking.
+
 ## Development
 
 ```bash
@@ -210,5 +241,5 @@ MIT License. See [LICENSE](LICENSE) for details.
 ---
 
 <div align="center">
-<i>Consume once, produce safely.</i>
+<strong>⊸</strong> <i>Consume once, produce safely.</i>
 </div>
